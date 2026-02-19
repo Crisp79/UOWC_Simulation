@@ -1,0 +1,18 @@
+{
+    "n_samples": 10000000,
+    "snr_db_start": -5,
+    "snr_db_stop": 116,
+    "snr_db_step": 10,
+    "threshold_snr": 1.0,
+    "uowc": {
+        "a": 0.6302,
+        "d": 1.1780,
+        "p": 0.8444,
+        "rho2": 1.0,
+        "A_eq": 1.0
+    },
+    "towc": {
+        "alpha": 2.0,
+        "beta": 2.0
+    }
+}
