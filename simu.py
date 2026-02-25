@@ -1,28 +1,30 @@
 import numpy as np
 from scipy.special import erfc
 
+
 def calculate_outage_probability(h_channel, snr_db_range, threshold=1.0):
     """
     Generic function to calculate outage for ANY channel array h_channel.
     """
     n_samples = len(h_channel)
     outage_probs = []
-    
+
     # Pre-calculate channel power to speed up loop
     h_sq = h_channel**2
-    
+
     for snr_db in snr_db_range:
-        avg_snr_lin = 10**(snr_db / 10.0)
-        
+        avg_snr_lin = 10 ** (snr_db / 10.0)
+
         # Outage Condition: Instantaneous SNR < Threshold
         # avg_snr * h^2 < threshold  =>  h^2 < threshold / avg_snr
         thresh_effective = threshold / avg_snr_lin
-        
+
         # Vectorized counting
         count = np.sum(h_sq < thresh_effective)
         outage_probs.append(count / n_samples)
-        
+
     return outage_probs
+
 
 def calculate_average_ber(h_channel, snr_db_range):
     """
@@ -33,29 +35,30 @@ def calculate_average_ber(h_channel, snr_db_range):
     """
     n_samples = len(h_channel)
     ber_results = []
-    
+
     # Pre-calculate squared channel
     h_sq = h_channel**2
-    
+
     for snr_db in snr_db_range:
         # Convert Average SNR to Linear
-        avg_snr_lin = 10**(snr_db / 10.0)
-        
+        avg_snr_lin = 10 ** (snr_db / 10.0)
+
         # Calculate Instantaneous SNR for all samples
         # gamma = avg_snr * h^2
         inst_snr = avg_snr_lin * h_sq * 0.00369
-        
+
         # Calculate BER for EACH sample
-        # Using approximation for OOK: Pe = Q(sqrt(gamma/2)) 
+        # Using approximation for OOK: Pe = Q(sqrt(gamma/2))
         # Q(x) = 0.5 * erfc(x / sqrt(2))
         # So Pe = 0.5 * erfc(sqrt(gamma/2) / sqrt(2)) = 0.5 * erfc(sqrt(gamma)/2)
-        
+
         # Note: If paper uses BPSK, it might be 0.5 * erfc(sqrt(gamma))
         # Let's assume standard IM/DD OOK:
         ber_instantaneous = 0.5 * erfc(np.sqrt(inst_snr) / 2.0)
-        
+
         # Average over all samples
         avg_ber = np.mean(ber_instantaneous)
         ber_results.append(avg_ber)
-        
+
     return ber_results
+
