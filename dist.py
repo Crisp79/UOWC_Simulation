@@ -36,7 +36,7 @@ def get_pointing_error(rho2, A_eq, n_samples):
     return h_p
 
 
-def sample_egg(params, num_samples):
+def get_egg_turbulance(params, num_samples):
     """
     Samples from the Exponential-Generalized Gamma (EGG) distribution.
 
