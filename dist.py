@@ -2,7 +2,7 @@ import numpy as np
 from scipy.special import gamma
 
 
-def get_gg_turbulence(params, n_samples):
+def sample_gg(params, n_samples):
     """
     Generates Normalized Generalized Gamma (GG) samples.
     To replace this with another distribution (e.g., Gamma-Gamma),
@@ -26,7 +26,7 @@ def get_gg_turbulence(params, n_samples):
     return h_norm
 
 
-def get_pointing_error(rho2, A_eq, n_samples):
+def sample_pointing_uowc(rho2, A_eq, n_samples):
     """
     Generates Pointing Error loss samples.
     """
@@ -36,7 +36,7 @@ def get_pointing_error(rho2, A_eq, n_samples):
     return h_p
 
 
-def get_egg_turbulance(params, num_samples):
+def sample_egg(params, num_samples):
     """
     Samples from the Exponential-Generalized Gamma (EGG) distribution.
 
@@ -80,4 +80,62 @@ def get_egg_turbulance(params, num_samples):
         gamma_samples = np.random.gamma(shape=d_over_p, scale=1.0, size=num_gg)
         samples[is_gg] = a * (gamma_samples ** (1 / p))
 
+    return samples
+
+
+def sample_ew(params, num_samples):
+    """
+    Samples points from the Exponentiated Weibull distribution.
+
+    Args:
+        params_json (str): JSON string containing alpha, beta, and eta.
+        num_samples (int): Number of samples to generate.
+
+    Returns:
+        list: A list of floats sampled from the distribution.
+    """
+    # Parse parameters from JSON
+    alpha = params["alpha"]
+    beta = params["beta"]
+    eta = params["eta"]
+
+    # Generate uniform random variables
+    u = np.random.uniform(0, 1, num_samples)
+
+    # Apply the Inverse Transform Sampling formula
+    # x = eta * (-ln(1 - u^(1/alpha)))^(1/beta)
+    samples = eta * ((-np.log(1 - u ** (1 / alpha))) ** (1 / beta))
+
+    return samples
+
+
+# Example Usage:
+# json_input = '{"alpha": 2.0, "beta": 1.5, "eta": 10.0}'
+# data = sample_exponentiated_weibull(json_input, 1000)
+# 
+
+def sample_gamma_gamma(params, num_samples):
+    """
+    Samples points from the Gamma-Gamma distribution using 
+    the product of two independent Gamma distributions.
+    
+    Args:
+        params_json (str): JSON string containing alpha and beta.
+        num_samples (int): Number of samples to generate.
+        
+    Returns:
+        list: A list of floats sampled from the distribution.
+    """
+    # Parse parameters from JSON
+    alpha = params['alpha']
+    beta = params['beta']
+    
+    # Generate two independent Gamma sets
+    # numpy.random.gamma(shape, scale, size)
+    gamma_large = np.random.gamma(alpha, 1/alpha, num_samples)
+    gamma_small = np.random.gamma(beta, 1/beta, num_samples)
+    
+    # The Gamma-Gamma sample is the point-wise product
+    samples = gamma_large * gamma_small
+    
     return samples

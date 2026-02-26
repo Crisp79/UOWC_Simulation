@@ -45,7 +45,7 @@ def calculate_average_ber(h_channel, snr_db_range):
 
         # Calculate Instantaneous SNR for all samples
         # gamma = avg_snr * h^2
-        inst_snr = avg_snr_lin * h_sq * 0.00369
+        inst_snr = avg_snr_lin * h_sq
 
         # Calculate BER for EACH sample
         # Using approximation for OOK: Pe = Q(sqrt(gamma/2))
@@ -61,4 +61,3 @@ def calculate_average_ber(h_channel, snr_db_range):
         ber_results.append(avg_ber)
 
     return ber_results
-
