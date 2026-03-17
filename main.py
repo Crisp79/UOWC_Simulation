@@ -6,7 +6,9 @@ from dist import (
     sample_ew,
     sample_gg,
     sample_gamma_gamma,
-    sample_pointing_uowc,
+    sample_malaga,
+    sample_fog,
+    sample_pointing,
 )
 from params import CONFIG
 from simu import calculate_average_ber, calculate_outage_probability
@@ -23,7 +25,7 @@ def main():
     h_u_turb_gamma_gamma = sample_gamma_gamma(CONFIG["uowc"]["gamma_gamma"], CONFIG["n_samples"])
 
     # 2. Get Pointing Errors
-    h_u_point = sample_pointing_uowc(
+    h_u_point = sample_pointing(
         CONFIG["uowc"]["rho2"], CONFIG["uowc"]["A_eq"], CONFIG["n_samples"]
     )
 
@@ -33,12 +35,16 @@ def main():
     h_uowc_ew = h_u_turb_ew * h_u_point
     h_uowc_gamma_gamma = h_u_turb_gamma_gamma * h_u_point
 
+    
     # --- Step B: Generate TOWC Link (Placeholder) ---
-    # To add TOWC, uncomment and implement below:
-    # h_t_turb = get_gamma_gamma_turbulence(CONFIG['towc'], CONFIG['n_samples'])
-    # h_t_point = get_pointing_error(...)
-    # h_towc = h_t_turb * h_t_point
-
+    # h_t_malaga = sample_malaga(CONFIG['towc']['malaga'], CONFIG['n_samples'])
+    # h_t_fog = sample_fog(CONFIG['towc']['fog'], CONFIG['n_samples'])
+    # h_t_point = sample_pointing(CONFIG['towc']['point']['rho2'],CONFIG['towc']['point']['A_eq'], CONFIG['n_samples'])
+    
+    # h_towc = h_t_malaga*h_t_fog*h_t_point
+    # outage_towc = calculate_outage_probability(
+    #     h_towc, CONFIG["snr_db_range"], CONFIG["threshold_snr"]
+    #)
     # --- Step C: End-to-End Channel ---
     # If using Relay (Decode-and-Forward), you analyze links separately.
     # If using Amplify-and-Forward (AF), you multiply them:
@@ -49,7 +55,16 @@ def main():
     h_final_egg = h_uowc_egg
     h_final_ew = h_uowc_ew
     h_final_gamma_gamma = h_uowc_gamma_gamma
-
+    #DF
+    # h_final_gg = h_uowc_gg * h_towc
+    # h_final_egg = h_uowc_egg * h_towc
+    # h_final_ew = h_uowc_ew * h_towc
+    # h_final_gamma_gamma = h_uowc_gamma_gamma * h_towc
+    # AF 
+    # h_final_gg = h_uowc_gg
+    # h_final_egg = h_uowc_egg
+    # h_final_ew = h_uowc_ew
+    # h_final_gamma_gamma = h_uowc_gamma_gamma
     # --- Step D: Calculate Performance ---
     outage_gg = calculate_outage_probability(
         h_final_gg, CONFIG["snr_db_range"], CONFIG["threshold_snr"]
@@ -65,7 +80,6 @@ def main():
     )
 
     ber_curve_gg = calculate_average_ber(h_final_gg, CONFIG["snr_db_range"])
-    # Optionally, calculate BER for EGG as well if needed
     ber_curve_egg = calculate_average_ber(h_final_egg, CONFIG["snr_db_range"])
     ber_curve_ew = calculate_average_ber(h_final_ew, CONFIG["snr_db_range"])
     ber_curve_gamma_gamma = calculate_average_ber(h_final_gamma_gamma, CONFIG["snr_db_range"])
@@ -131,6 +145,7 @@ def main():
     axes[1].set_ylim(1e-6, 1)
     axes[1].set_xlim(0, 110)
     axes[1].legend()
+    
     plt.show()
 
 
