@@ -1,25 +1,22 @@
 import numpy as np
-from scipy.special import gamma
-
+from scipy.special import comb, gamma
+from scipy.special import gammaln
 
 def sample_gg(params, n_samples):
-    """
-    Generates Normalized Generalized Gamma (GG) samples.
-    To replace this with another distribution (e.g., Gamma-Gamma),
-    create a similar function and point to it in Segment 4.
-    """
+    """Generate normalized Generalized Gamma distributed samples."""
+    # Extract GG distribution parameters
     a = params["a"]
     d = params["d"]
     p = params["p"]
 
-    # 1. Generate raw GG samples using Gamma transformation
-    # X ~ GG(a,d,p) <=> X = a * G^(1/p) where G ~ Gamma(d/p, 1)
+    # Generalized Gamma is defined as: X = a * G^(1/p) where G ~ Gamma(d/p, 1)
+    # First compute the shape parameter for the underlying Gamma distribution
     shape_k = d / p
     g_samples = np.random.gamma(shape=shape_k, scale=1.0, size=n_samples)
     h_raw = a * np.power(g_samples, 1 / p)
 
-    # 2. Theoretical Normalization (Crucial for correct SNR scaling)
-    # Normalize so E[h^2] = 1
+    # Normalize so that E[h^2] = 1 (unit mean square for correct SNR scaling)
+    # Theoretical second moment: E[h^2] = a^2 * Gamma((d+2)/p) / Gamma(d/p)
     moment_2 = (a**2) * gamma((d + 2) / p) / gamma(d / p)
     h_norm = h_raw / np.sqrt(moment_2)
 
@@ -27,56 +24,47 @@ def sample_gg(params, n_samples):
 
 
 def sample_pointing(rho2, A_eq, n_samples):
-    """
-    Generates Pointing Error loss samples.
-    """
-    # Inverse CDF method: x = A_eq * U^(1/rho^2)
+    """Generate pointing error loss samples using inverse CDF method."""
+    # Generate uniform random variables [0, 1]
     u = np.random.uniform(0, 1, n_samples)
+
+    # Apply inverse CDF of pointing error distribution
+    # CDF inversion: h_p = A_eq * U^(1/rho^2)
+    # This ensures proper statistical distribution of pointing losses
     h_p = A_eq * np.power(u, 1 / rho2)
+    h_p = h_p / np.sqrt(np.mean(h_p**2))
     return h_p
 
 
 def sample_egg(params, num_samples):
-    """
-    Samples from the Exponential-Generalized Gamma (EGG) distribution.
+    """Generate Exponential-Generalized Gamma mixture distribution samples."""
+    # Extract mixture parameters
+    omega = params["omega_1"]  # Mixture weight for exponential component
+    lambda_param = params["lambda_1"]  # Scale parameter for exponential
+    a = params["a_1"]  # Scale parameter for GG
+    d_over_p = params["d_over_p_1"]  # Shape parameter for GG
+    p = params["p_1"]  # Shape parameter for GG
 
-    Parameters:
-    num_samples  : int, number of samples to generate
-    omega        : float, mixture coefficient (weight of the exponential part)
-    lambda_param : float, scale parameter for the exponential part
-    a            : float, scale parameter for the GG part
-    d_over_p     : float, shape parameter (d/p) for the GG part
-    p            : float, shape parameter for the GG part
-    """
-    omega = params["omega_1"]
-    lambda_param = params["lambda_1"]
-    a = params["a_1"]
-    d_over_p = params["d_over_p_1"]
-    p = params["p_1"]
-
-    # 1. Flip a biased coin for each sample to decide which distribution to use
+    # Generate uniform random variables to select mixture component
     u = np.random.uniform(0, 1, num_samples)
 
-    # Masks to route samples to either Exponential or GG
-    is_exp = u < omega
-    is_gg = ~is_exp
+    # Create boolean masks for routing samples to appropriate distribution
+    is_exp = u < omega  # Select exponential with probability omega
+    is_gg = ~is_exp  # Remaining samples go to GG
 
-    # Count how many of each we need
+    # Count how many samples needed from each distribution
     num_exp = np.sum(is_exp)
     num_gg = np.sum(is_gg)
 
-    # Create the output array
+    # Initialize output array
     samples = np.empty(num_samples)
 
-    # 2. Sample the Exponential part
+    # Sample exponential component if needed
     if num_exp > 0:
-        # np.random.exponential takes the scale parameter directly
         samples[is_exp] = np.random.exponential(scale=lambda_param, size=num_exp)
 
-    # 3. Sample the Generalized Gamma part
+    # Sample GG component if needed
     if num_gg > 0:
-        # GG can be sampled by transforming standard Gamma samples
-        # x = a * (Gamma(k=d/p, theta=1))^(1/p)
         gamma_samples = np.random.gamma(shape=d_over_p, scale=1.0, size=num_gg)
         samples[is_gg] = a * (gamma_samples ** (1 / p))
 
@@ -84,87 +72,60 @@ def sample_egg(params, num_samples):
 
 
 def sample_ew(params, num_samples):
-    """
-    Samples points from the Exponentiated Weibull distribution.
+    """Generate Exponentiated Weibull distributed samples."""
+    # Extract distribution parameters
+    alpha = params["alpha"]  # Exponentiation parameter
+    beta = params["beta"]  # Weibull shape parameter
+    eta = params["eta"]  # Scale parameter
 
-    Args:
-        params_json (str): JSON string containing alpha, beta, and eta.
-        num_samples (int): Number of samples to generate.
-
-    Returns:
-        list: A list of floats sampled from the distribution.
-    """
-    # Parse parameters from JSON
-    alpha = params["alpha"]
-    beta = params["beta"]
-    eta = params["eta"]
-
-    # Generate uniform random variables
+    # Generate uniform random variables [0, 1]
     u = np.random.uniform(0, 1, num_samples)
 
-    # Apply the Inverse Transform Sampling formula
-    # x = eta * (-ln(1 - u^(1/alpha)))^(1/beta)
+    # Apply inverse transform sampling for Exponentiated Weibull
+    # Formula: X = eta * (-ln(1 - U^(1/alpha)))^(1/beta)
+    # This maps uniform [0,1] to EW distribution
     samples = eta * ((-np.log(1 - u ** (1 / alpha))) ** (1 / beta))
 
     return samples
 
 
 def sample_gamma_gamma(params, num_samples):
-    """
-    Samples points from the Gamma-Gamma distribution using
-    the product of two independent Gamma distributions.
+    """Generate Gamma-Gamma distributed samples as product of two independent Gamma variables."""
+    # Extract distribution parameters
+    alpha = params["alpha"]  # First Gamma shape parameter
+    beta = params["beta"]  # Second Gamma shape parameter
 
-    Args:
-        params_json (str): JSON string containing alpha and beta.
-        num_samples (int): Number of samples to generate.
-
-    Returns:
-        list: A list of floats sampled from the distribution.
-    """
-    # Parse parameters from JSON
-    alpha = params["alpha"]
-    beta = params["beta"]
-
-    # Generate two independent Gamma sets
-    # numpy.random.gamma(shape, scale, size)
+    # Gamma-Gamma distribution = product of two independent Gamma RVs
+    # G1 ~ Gamma(alpha, 1/alpha) and G2 ~ Gamma(beta, 1/beta)
+    # This models strong turbulence in optical channels
     gamma_large = np.random.gamma(alpha, 1 / alpha, num_samples)
     gamma_small = np.random.gamma(beta, 1 / beta, num_samples)
 
-    # The Gamma-Gamma sample is the point-wise product
+    # Multiply the two Gamma variables element-wise
     samples = gamma_large * gamma_small
 
     return samples
 
 
 def compute_malaga_params(alphaM, betaM, OmegaM, rho_los):
-    """
-    Compute Malaga mixture weights and Gamma scale parameters.
+    """Compute Malaga mixture weights and Gamma scale parameters."""
+    # Malaga distribution is a mixture of Gamma distributions
+    # Set normalized total scatter power
+    sigma_s2 = 1.0
 
-    Malaga parameterisation (from paper [38], Jurado-Navas 2011):
-      sigma_s2 = total scatter power = 1.0 (normalized)
-      gM = 2 * sigma_s2 * (1 - rho_los)     [scatter power NOT in LOS]
-      OmegaM_prime = OmegaM + 2*rho_los*sigma_s2 + 2*sqrt(...)
-                   ~ OmegaM (simplified for rho_los < 1)
+    # Scatter power not in LOS component: g_M = 2 * sigma_s2 * (1 - rho_los)
+    gM = 2.0 * sigma_s2 * (1.0 - rho_los)
 
-    Mixture weights (eq. from Ansari 2016, matches paper's eq.2):
-      w_m1 = C(betaM-1, m1-1) * Gamma(alphaM+m1) / (Gamma(alphaM)*Gamma(m1+1))
-             * (OmegaM/(gM*betaM+OmegaM))^m1
-             * (gM*betaM/(gM*betaM+OmegaM))^alphaM
-             / (gM*betaM+OmegaM)^(m1) * ...  [normalised to sum to 1]
+    # Shorthand for mixture parameter calculation
+    xi = gM * betaM / (gM * betaM + OmegaM)
 
-    Gamma scale for each term:
-      theta_m1 = (gM*betaM + OmegaM) / (alphaM * betaM)
-    """
-    from scipy.special import comb
-
-    sigma_s2 = 1.0  # normalized total scatter power
-    gM = 2.0 * sigma_s2 * (1.0 - rho_los)  # scatter power off LOS
-    xi = gM * betaM / (gM * betaM + OmegaM)  # shorthand
-
-    # Compute unnormalized weights for m1 = 1 ... betaM
+    # Compute mixture weights for each component m1 = 1 to betaM
     weights = []
     for m1 in range(1, betaM + 1):
+        # Binomial coefficient: C(betaM-1, m1-1)
         binom_coeff = comb(betaM - 1, m1 - 1, exact=True)
+
+        # Weight calculation from Malaga distribution theory
         w = (
             binom_coeff
             * gamma(alphaM + m1)
@@ -174,141 +135,140 @@ def compute_malaga_params(alphaM, betaM, OmegaM, rho_los):
         )
         weights.append(w)
 
+    # Normalize weights to form valid probability distribution
     weights = np.array(weights, dtype=float)
-    weights /= weights.sum()  # normalize to valid probability weights
+    weights /= weights.sum()
 
-    # Gamma shape and scale for each mixture component
-    # Shape = alphaM + m1,  Scale = (gM*betaM + OmegaM) / (alphaM * betaM)
+    # Scale parameter for all Gamma mixture components
     theta = (gM * betaM + OmegaM) / (alphaM * betaM)
+    
+    print("weights sum:", weights.sum())
+    print("min weight:", weights.min())
+    print("max weight:", weights.max())
 
     return weights, theta, gM
 
 
 def sample_malaga(cfg, n_samples):
     """
-    Sample Malaga turbulence using mixture-of-Gammas method.
-    Paper eq.(2) — terrestrial atmospheric turbulence.
+    Málaga turbulence sampler (stable + paper-consistent)
 
-    Steps:
-    1. Compute mixture weights w_m1 for m1=1..betaM
-    2. For each sample: pick component m1 ~ Categorical(w), then draw Gamma
-    3. Normalize so E[h^2] = 1
+    Uses mixture-of-Gamma approximation aligned with Eq.(5)
     """
+
     alphaM = cfg["alphaM"]
     betaM = cfg["betaM"]
     OmegaM = cfg["omegaM"]
     rho_los = cfg["rho_loss"]
 
-    weights, theta, gM = compute_malaga_params(alphaM, betaM, OmegaM, rho_los)
+    # --- Step 1: Derived parameters ---
+    gM = rho_los
+    Omega = OmegaM
 
-    # Draw component indices according to mixture weights
+    m_vals = np.arange(1, betaM + 1)
+
+    # --- Step 2: Compute mixture weights b_m (log-domain) ---
+    # From Málaga model structure (stable form)
+
+    log_b = (
+        gammaln(alphaM + m_vals)
+        - gammaln(m_vals)
+        - gammaln(alphaM)
+        + m_vals * np.log(gM + 1e-300)
+        - m_vals * np.log(gM + Omega + 1e-300)
+    )
+
+    # Stabilize
+    log_b -= np.max(log_b)
+    weights = np.exp(log_b)
+
+    # Normalize
+    weights /= np.sum(weights)
+
+    # --- Step 3: Sample mixture components ---
     components = np.random.choice(betaM, size=n_samples, p=weights)
 
-    # Draw Gamma samples for each component
+    # --- Step 4: Gamma sampling ---
     h_raw = np.zeros(n_samples)
+
+    theta = (gM + Omega) / alphaM  # scale parameter
+
     for m1_idx in range(betaM):
         mask = components == m1_idx
-        m1 = m1_idx + 1  # m1 runs from 1 to betaM
-        shape_param = alphaM + m1
         count = mask.sum()
-        if count > 0:
-            h_raw[mask] = np.random.gamma(shape=shape_param, scale=theta, size=count)
 
-    # Normalize: E[h^2] = Var(h) + (E[h])^2
-    # For Malaga: E[h] = OmegaM + gM (= total mean power = 1 normalized)
-    # We compute empirically for safety
+        if count > 0:
+            m1 = m1_idx + 1
+            shape = alphaM + m1
+
+            h_raw[mask] = np.random.gamma(
+                shape=shape,
+                scale=theta,
+                size=count
+            )
+
+    # --- Step 5: Normalize power ---
     mean_h2 = np.mean(h_raw**2)
-    if mean_h2 > 0:
+
+    if mean_h2 > 0 and np.isfinite(mean_h2):
         h_norm = h_raw / np.sqrt(mean_h2)
     else:
+        print("[WARNING] Málaga normalization failed")
         h_norm = h_raw
 
     return h_norm
 
 
-# -------------------------------------------------------
-# 2C. TOWC: Fog-induced fading — paper eq.(6)
-#
-# f(x) = (z^k / Gamma(k)) * (log(1/x))^(k-1) * x^(z-1),  0 < x <= 1
-#
-# where z = 4.343 / (beta_f * d_T)
-#
-# This is a Gamma distribution in the variable Y = -log(x):
-#   Y = log(1/x) ~ Gamma(k, 1/z)
-#   => x = exp(-Y)
-#
-# Sampling: Y ~ Gamma(k, 1/z), then h_f = exp(-Y)
-# -------------------------------------------------------
+
 def sample_fog(cfg, n_samples):
-    """
-    Sample fog-induced fading — paper eq.(6).
+    """Generate fog-induced fading samples using exponential transformation of Gamma."""
+    # Extract fog parameters
+    k = cfg["fog_k"]  # Gamma shape parameter
+    beta_f = cfg["fog_beta"]  # Fog absorption coefficient
+    d_T = cfg["d_T"]  # Distance in km
 
+    # Calculate z parameter from fog model
+    # z = 4.343 / (beta_f * d_T) defines the rate of fading
     z = 4.343 / (beta_f * d_T)
-    Y = log(1/x) ~ Gamma(k, 1/z)
-    h_f = exp(-Y)
 
-    Paper Section V: light fog: k=2.32, beta_f=13.12, d_T=0.4km
-    """
-    k = cfg["fog_k"]
-    beta_f = cfg["fog_beta"]
-    d_T = cfg["d_T"]
-
-    z = 4.343 / (beta_f * d_T)  # paper eq.(6) definition of z
-
-    # Y ~ Gamma(k, scale=1/z)
+    # Fog fading distribution uses log-transformation of Gamma
+    # Y = log(1/x) ~ Gamma(k, 1/z)
     Y = np.random.gamma(shape=k, scale=1.0 / z, size=n_samples)
-    h_f = np.exp(-Y)  # h_f = exp(-Y) = exp(log x) = x
 
-    # Note: fog fading is NOT normalized to E[h^2]=1 because it represents
-    # a real path loss. E[h_f] = (z/(z+1))^k (mean < 1 = loss).
-    # This correctly degrades SNR as in the paper.
+    # Apply exponential transformation: h_f = exp(-Y)
+    # This maps Gamma to fog fading distribution with proper attenuation
+    h_f = np.exp(-Y)
     return h_f
+    
+def sample_multilayer_channel(model, params, n_layers, n_samples):
+    """
+    Generate cascaded multi-layer channel:
+    h_c = ∏ h_i for i = 1..N
+    """
 
+    # Initialize channel as ones (multiplicative identity)
+    h_total = np.ones(n_samples)
 
-# =============================================================================
-# SEGMENT 3: SIMULATION ENGINE
-# =============================================================================
+    for _ in range(n_layers):
+        if model == "gg":
+            h_layer = sample_gg(params, n_samples)
 
+        elif model == "egg":
+            h_layer = sample_egg(params, n_samples)
 
-# def calculate_outage_probability(h_channel, snr_db_range, threshold=1.0):
-#     """
-#     Single-hop outage probability — paper eq.(20):
-#       P_out = P(gamma < gamma_th) = P(gamma_bar * h^2 < gamma_th)
-#     """
-#     h_sq = h_channel**2
-#     outage = []
-#     for snr_db in snr_db_range:
-#         snr_lin = 10 ** (snr_db / 10.0)
-#         thresh = threshold / snr_lin
-#         outage.append(np.mean(h_sq < thresh))
-#     return np.array(outage)
+        elif model == "ew":
+            h_layer = sample_ew(params, n_samples)
 
+        elif model == "gamma_gamma":
+            h_layer = sample_gamma_gamma(params, n_samples)
 
-# def calculate_af_outage(h_towc, h_uowc, snr_db_range, threshold=1.0, C=1.0):
-#     """
-#     Fixed-gain AF end-to-end outage — paper eq.(29):
-#       gamma_e2e = (gamma_T * gamma_U) / (gamma_U + C)
+        else:
+            raise ValueError("Unknown model")
 
-#     Paper uses C as a constant related to relay gain.
-#     Outage: P(gamma_e2e < gamma_th)
-#     """
-#     h_T_sq = h_towc**2
-#     h_U_sq = h_uowc**2
-#     outage = []
-#     for snr_db in snr_db_range:
-#         snr_lin = 10 ** (snr_db / 10.0)
-#         g_T = snr_lin * h_T_sq
-#         g_U = snr_lin * h_U_sq
-#         g_e2e = (g_T * g_U) / (g_U + C)  # paper eq.(29)
-#         outage.append(np.mean(g_e2e < threshold))
-#     return np.array(outage)
-
-
-# def calculate_df_outage(h_towc, h_uowc, snr_db_range, threshold=1.0):
-# """
-# DF outage (for comparison — not the paper's scheme):
-#   P_out = 1 - (1-P1)(1-P2)
-# """
-# p1 = calculate_outage_probability(h_towc, snr_db_range, threshold)
-# p2 = calculate_outage_probability(h_uowc, snr_db_range, threshold)
-# return 1.0 - (1.0 - p1) * (1.0 - p2), p1, p2
+        # Multiply layer contribution
+        h_total *= h_layer
+    
+    mean_h2 = np.mean(h_total**2)
+    if mean_h2 > 0:
+        h_total = h_total / np.sqrt(mean_h2)
+    return h_total
