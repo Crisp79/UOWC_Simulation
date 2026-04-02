@@ -143,6 +143,14 @@ def main():
         markeredgecolor="y",
         markerfacecolor="none",
     )
+    axes[0,0].semilogy(
+        CONFIG["snr_db_range"],
+        outage_gg_towc_df,
+        "rs-",
+        label="UOWC (GG + Pointing + TOWC (DF))",
+        markeredgecolor="r",
+        markerfacecolor="none",
+    )
     axes[0,0].axvline(x=avg_snr, alpha=0.3)
     axes[0,0].grid(True, which="both", linestyle="--", alpha=0.5)
     axes[0,0].set_title(f"Outage Probability (Monte Carlo, N={CONFIG['n_samples']:.0e})")
@@ -232,8 +240,6 @@ def main():
     axes[1,1].set_xlim(0, 110)
     axes[1,1].legend()
     plt.show()
-
-fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
 if __name__ == "__main__":
     main()

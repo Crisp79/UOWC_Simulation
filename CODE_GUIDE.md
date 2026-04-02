@@ -38,7 +38,7 @@ Simulator/
 - `h_u_point`: Pointing error effects
 - `h_final_*`: Combined UOWC channel gains (after turbulence × pointing errors)
 - `outage_*`: Outage probability arrays for each model
-- `ber_curve_*`: BER arrays for each model
+- `ber_curve_*`: BER arrays for each mode
 
 ### simu.py
 **Purpose**: Calculates communication performance metrics.
@@ -292,7 +292,6 @@ This simulator implements models from optical wireless communication literature:
 
 ## Next Work
 
-- Ergodic Capacity
 - Fog in TOWC
 - OOK vs BPSK
 - inputs for flexibility
