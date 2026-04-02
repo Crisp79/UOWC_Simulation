@@ -61,3 +61,34 @@ def calculate_average_ber(h_channel, snr_db_range):
         ber_results.append(avg_ber)
 
     return ber_results
+
+def calculate_ergodic_capacity(h_channel, snr_db_range):
+    """
+    Calculates Ergodic Capacity using Monte Carlo integration.
+    Formula: C = E[ log2(1 + SNR_inst) ]
+    
+    Units: Bits per second per Hertz (bps/Hz)
+    """
+    n_samples = len(h_channel)
+    capacity_results = []
+
+    # Pre-calculate squared channel
+    h_sq = h_channel**2
+
+    for snr_db in snr_db_range:
+        # Convert Average SNR to Linear
+        avg_snr_lin = 10 ** (snr_db / 10.0)
+
+        # Calculate Instantaneous SNR: gamma = avg_snr * h^2
+        inst_snr = avg_snr_lin * h_sq
+
+        # Calculate Instantaneous Capacity for all samples
+        # C = log2(1 + gamma)
+        # Using np.log1p(x) is more numerically stable for small x than log(1+x)
+        cap_instantaneous = np.log2(1 + inst_snr)
+
+        # Average over all samples (Monte Carlo integration)
+        avg_capacity = np.mean(cap_instantaneous)
+        capacity_results.append(avg_capacity)
+
+    return capacity_results
