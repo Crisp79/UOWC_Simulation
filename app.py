@@ -35,7 +35,6 @@ def load_defaults():
 
 def main():
     st.title("UOWC Simulation")
-    st.markdown("Run to generate graphs")
     
     if 'config' not in st.session_state:
         st.session_state.config = load_defaults()
@@ -328,6 +327,8 @@ def main():
             with col2:
                 st.plotly_chart(fig2, use_container_width=True)
                 st.plotly_chart(fig4, use_container_width=True)
+                
+    else: st.info("Run to generate graphs");
 
 
 if __name__ == "__main__":
