@@ -1,0 +1,15 @@
+[theme]
+# The primary accent color for interactive elements (Blue)
+primaryColor = "#005b96"
+
+# Background color for the main content area (Light Blue-ish white)
+backgroundColor = "#f4f8fb"
+
+# Background color for the sidebar (Slightly darker blue-gray)
+secondaryBackgroundColor = "#e1eaf2"
+
+# Text color
+textColor = "#1a1a1a"
+
+# Font family
+font = "sans serif"
