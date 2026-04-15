@@ -1,6 +1,6 @@
 import numpy as np
-from scipy.special import comb, gamma
-from scipy.special import gammaln
+from scipy.special import comb, gamma, gammaln
+
 
 def sample_gg(params, n_samples):
     """Generate normalized Generalized Gamma distributed samples."""
@@ -141,7 +141,7 @@ def compute_malaga_params(alphaM, betaM, OmegaM, rho_los):
 
     # Scale parameter for all Gamma mixture components
     theta = (gM * betaM + OmegaM) / (alphaM * betaM)
-    
+
     print("weights sum:", weights.sum())
     print("min weight:", weights.min())
     print("max weight:", weights.max())
@@ -165,6 +165,7 @@ def sample_malaga(cfg, n_samples):
     gM = rho_los
     Omega = OmegaM
 
+    betaM = int(betaM)
     m_vals = np.arange(1, betaM + 1)
 
     # --- Step 2: Compute mixture weights b_m (log-domain) ---
@@ -186,7 +187,7 @@ def sample_malaga(cfg, n_samples):
     weights /= np.sum(weights)
 
     # --- Step 3: Sample mixture components ---
-    components = np.random.choice(betaM, size=n_samples, p=weights)
+    components = np.random.choice(np.arange(betaM), size=n_samples, p=weights)
 
     # --- Step 4: Gamma sampling ---
     h_raw = np.zeros(n_samples)
@@ -201,11 +202,7 @@ def sample_malaga(cfg, n_samples):
             m1 = m1_idx + 1
             shape = alphaM + m1
 
-            h_raw[mask] = np.random.gamma(
-                shape=shape,
-                scale=theta,
-                size=count
-            )
+            h_raw[mask] = np.random.gamma(shape=shape, scale=theta, size=count)
 
     # --- Step 5: Normalize power ---
     mean_h2 = np.mean(h_raw**2)
@@ -217,7 +214,6 @@ def sample_malaga(cfg, n_samples):
         h_norm = h_raw
 
     return h_norm
-
 
 
 def sample_fog(cfg, n_samples):
@@ -239,7 +235,8 @@ def sample_fog(cfg, n_samples):
     # This maps Gamma to fog fading distribution with proper attenuation
     h_f = np.exp(-Y)
     return h_f
-    
+
+
 def sample_multilayer_channel(model, params, n_layers, n_samples):
     """
     Generate cascaded multi-layer channel:
@@ -267,7 +264,7 @@ def sample_multilayer_channel(model, params, n_layers, n_samples):
 
         # Multiply layer contribution
         h_total *= h_layer
-    
+
     mean_h2 = np.mean(h_total**2)
     if mean_h2 > 0:
         h_total = h_total / np.sqrt(mean_h2)
