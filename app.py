@@ -531,100 +531,52 @@ def main():
     threshold_snr = cfg["threshold_snr"]
 
     model_instances = []
-    for model in ["GG", "EGG", "EW", "Gamma-Gamma"]:
-        count = int(st.session_state.get(f"{model}_instances_count", 1))
-        if count < 1:
-            count = 1
-            st.session_state[f"{model}_instances_count"] = 1
-        for idx in range(count):
-            params = {}
-            if model == "GG":
+    for model_name, cfg_key, _defaults in [
+        ("GG", "gg_instances", cfg["uowc"]["gg"]),
+        ("EGG", "egg_instances", cfg["uowc"]["egg"]),
+        ("EW", "ew_instances", cfg["uowc"]["ew"]),
+        ("Gamma-Gamma", "gamma_gamma_instances", cfg["uowc"]["gamma_gamma"]),
+    ]:
+        instances = cfg["uowc"].get(cfg_key, [])
+        for idx, inst in enumerate(instances):
+            if model_name == "GG":
                 params = {
-                    "a": float(
-                        st.session_state.get(
-                            f"gg_instances_{idx}_a", cfg["uowc"]["gg"]["a"]
-                        )
-                    ),
-                    "d": float(
-                        st.session_state.get(
-                            f"gg_instances_{idx}_d", cfg["uowc"]["gg"]["d"]
-                        )
-                    ),
-                    "p": float(
-                        st.session_state.get(
-                            f"gg_instances_{idx}_p", cfg["uowc"]["gg"]["p"]
-                        )
-                    ),
+                    "a": float(inst.get("a", cfg["uowc"]["gg"]["a"])),
+                    "d": float(inst.get("d", cfg["uowc"]["gg"]["d"])),
+                    "p": float(inst.get("p", cfg["uowc"]["gg"]["p"])),
                 }
-            elif model == "EGG":
+            elif model_name == "EGG":
                 params = {
                     "omega_1": float(
-                        st.session_state.get(
-                            f"egg_instances_{idx}_omega_1",
-                            cfg["uowc"]["egg"]["omega_1"],
-                        )
+                        inst.get("omega_1", cfg["uowc"]["egg"]["omega_1"])
                     ),
                     "lambda_1": float(
-                        st.session_state.get(
-                            f"egg_instances_{idx}_lambda_1",
-                            cfg["uowc"]["egg"]["lambda_1"],
-                        )
+                        inst.get("lambda_1", cfg["uowc"]["egg"]["lambda_1"])
                     ),
                     "d_over_p_1": float(
-                        st.session_state.get(
-                            f"egg_instances_{idx}_d_over_p_1",
-                            cfg["uowc"]["egg"]["d_over_p_1"],
-                        )
+                        inst.get("d_over_p_1", cfg["uowc"]["egg"]["d_over_p_1"])
                     ),
-                    "a_1": float(
-                        st.session_state.get(
-                            f"egg_instances_{idx}_a_1", cfg["uowc"]["egg"]["a_1"]
-                        )
-                    ),
-                    "p_1": float(
-                        st.session_state.get(
-                            f"egg_instances_{idx}_p_1", cfg["uowc"]["egg"]["p_1"]
-                        )
-                    ),
+                    "a_1": float(inst.get("a_1", cfg["uowc"]["egg"]["a_1"])),
+                    "p_1": float(inst.get("p_1", cfg["uowc"]["egg"]["p_1"])),
                 }
-            elif model == "EW":
+            elif model_name == "EW":
                 params = {
-                    "alpha": float(
-                        st.session_state.get(
-                            f"ew_instances_{idx}_alpha", cfg["uowc"]["ew"]["alpha"]
-                        )
-                    ),
-                    "beta": float(
-                        st.session_state.get(
-                            f"ew_instances_{idx}_beta", cfg["uowc"]["ew"]["beta"]
-                        )
-                    ),
-                    "eta": float(
-                        st.session_state.get(
-                            f"ew_instances_{idx}_eta", cfg["uowc"]["ew"]["eta"]
-                        )
-                    ),
+                    "alpha": float(inst.get("alpha", cfg["uowc"]["ew"]["alpha"])),
+                    "beta": float(inst.get("beta", cfg["uowc"]["ew"]["beta"])),
+                    "eta": float(inst.get("eta", cfg["uowc"]["ew"]["eta"])),
                 }
             else:
                 params = {
                     "alpha": float(
-                        st.session_state.get(
-                            f"gamma_gamma_instances_{idx}_alpha",
-                            cfg["uowc"]["gamma_gamma"]["alpha"],
-                        )
+                        inst.get("alpha", cfg["uowc"]["gamma_gamma"]["alpha"])
                     ),
-                    "beta": float(
-                        st.session_state.get(
-                            f"gamma_gamma_instances_{idx}_beta",
-                            cfg["uowc"]["gamma_gamma"]["beta"],
-                        )
-                    ),
+                    "beta": float(inst.get("beta", cfg["uowc"]["gamma_gamma"]["beta"])),
                 }
-            model_instances.append((model, idx + 1, params))
+            model_instances.append((model_name, idx + 1, params))
 
     if not model_instances:
         st.warning("No model instances defined — please add at least one instance.")
-        return
+        st.stop()
 
     snr_db_range_list = [float(x) for x in snr_db_range.tolist()]
 
