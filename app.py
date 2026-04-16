@@ -1,18 +1,114 @@
+import hashlib
 import json
 import time
 
 import numpy as np
+import plotly.graph_objects as go
 import streamlit as st
 
-from core.config import ensure_cfg_structure, load_defaults
-from plots.dashboard import build_dashboard_figures
-from simulation.runner import make_cache_signature, run_simulation_cached
-
-st.set_page_config(
-    page_title="OWC Simulation Dashboard",
-    page_icon="📡",
-    layout="wide",
+from avg_snr import calculate_snr_imdd
+from dist import (
+    sample_egg,
+    sample_ew,
+    sample_fog,
+    sample_gamma_gamma,
+    sample_gg,
+    sample_malaga,
+    sample_pointing,
 )
+from simu import (
+    calculate_average_ber,
+    calculate_ergodic_capacity,
+    calculate_outage_probability,
+)
+
+st.set_page_config(page_title="OWC Simulation Dashboard", page_icon="📡", layout="wide")
+
+
+def load_defaults():
+    """Load params.json if present, else return minimal defaults."""
+    try:
+        with open("params.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {
+            "n_samples": 100000,
+            "snr_db_start": -5,
+            "snr_db_stop": 116,
+            "snr_db_step": 10,
+            "threshold_snr": 1.0,
+            "config": {
+                "p_tx": 10.0,
+                "dist": 30.0,
+                "alpha": 0.0056,
+                "sigma_t": 1e-14,
+            },
+            "uowc": {
+                "gg": {"a": 0.6302, "d": 1.178, "p": 0.8444},
+                "egg": {
+                    "omega_1": 0.4589,
+                    "lambda_1": 0.3449,
+                    "d_over_p_1": 1.0421,
+                    "a_1": 1.5768,
+                    "p_1": 35.9424,
+                },
+                "ew": {"alpha": 2.5, "beta": 0.7, "eta": 0.5},
+                "gamma_gamma": {"alpha": 5.0, "beta": 1.18},
+                "rho2": 1.0,
+                "A_eq": 1.0,
+            },
+            "towc": {
+                "malaga": {
+                    "alphaM": 4.0,
+                    "betaM": 3.0,
+                    "omegaM": 1.0,
+                    "rho_loss": 1.0,
+                },
+                "fog": {"fog_k": 2.32, "fog_beta": 13.32, "d_T": 400.0},
+                "point": {"rho2": 6.0, "A_eq": 6.0},
+            },
+        }
+
+
+def ensure_cfg_structure(cfg):
+    """Ensure keys exist and are in expected types/shape."""
+    cfg.setdefault("n_samples", 100000)
+    cfg.setdefault("snr_db_start", -5)
+    cfg.setdefault("snr_db_stop", 116)
+    cfg.setdefault("snr_db_step", 10)
+    cfg.setdefault("threshold_snr", 1.0)
+    cfg.setdefault("config", {})
+    cfg["config"].setdefault("p_tx", 10.0)
+    cfg["config"].setdefault("dist", 30.0)
+    cfg["config"].setdefault("alpha", 0.0056)
+    cfg["config"].setdefault("sigma_t", 1e-14)
+
+    cfg.setdefault("uowc", {})
+    cfg["uowc"].setdefault("gg", {"a": 0.6302, "d": 1.178, "p": 0.8444})
+    cfg["uowc"].setdefault(
+        "egg",
+        {
+            "omega_1": 0.4589,
+            "lambda_1": 0.3449,
+            "d_over_p_1": 1.0421,
+            "a_1": 1.5768,
+            "p_1": 35.9424,
+        },
+    )
+    cfg["uowc"].setdefault("ew", {"alpha": 2.5, "beta": 0.7, "eta": 0.5})
+    cfg["uowc"].setdefault("gamma_gamma", {"alpha": 5.0, "beta": 1.18})
+    cfg["uowc"].setdefault("rho2", 1.0)
+    cfg["uowc"].setdefault("A_eq", 1.0)
+
+    cfg.setdefault("towc", {})
+    cfg["towc"].setdefault(
+        "malaga",
+        {"alphaM": 4.0, "betaM": 3.0, "omegaM": 1.0, "rho_loss": 1.0},
+    )
+    cfg["towc"].setdefault("fog", {"fog_k": 2.32, "fog_beta": 13.32, "d_T": 400.0})
+    cfg["towc"].setdefault("point", {"rho2": 6.0, "A_eq": 6.0})
+
+    return cfg
 
 
 def _safe_float(value, default):
@@ -27,6 +123,111 @@ def _safe_int(value, default):
         return int(value)
     except Exception:
         return int(default)
+
+
+def _serialize_instances_for_cache(instances):
+    return json.dumps(
+        [
+            {"model": model, "index": idx, "params": params}
+            for (model, idx, params) in instances
+        ],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _make_cache_signature(
+    instances,
+    rho2,
+    a_eq,
+    towc_params,
+    cfg_config,
+    n_samples,
+    snr_db_range,
+    threshold_snr,
+):
+    payload = {
+        "instances": json.loads(_serialize_instances_for_cache(instances)),
+        "rho2": float(rho2),
+        "a_eq": float(a_eq),
+        "towc": towc_params,
+        "cfg_config": cfg_config,
+        "n_samples": int(n_samples),
+        "snr_db_range": [float(x) for x in snr_db_range],
+        "threshold_snr": float(threshold_snr),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+@st.cache_data(show_spinner=False)
+def _run_simulation_cached(
+    cache_signature,
+    instances_json,
+    rho2,
+    a_eq,
+    towc_json,
+    cfg_config_json,
+    n_samples,
+    snr_db_range_list,
+    threshold_snr,
+):
+    _ = cache_signature
+
+    instances = json.loads(instances_json)
+    towc_params = json.loads(towc_json)
+    cfg_config = json.loads(cfg_config_json)
+
+    snr_db_range = np.array(snr_db_range_list)
+
+    h_u_point = sample_pointing(rho2, a_eq, n_samples)
+
+    results = []
+    for inst in instances:
+        model = inst["model"]
+        idx = inst["index"]
+        params = inst["params"]
+
+        if model == "GG":
+            h_turb = sample_gg(params, n_samples)
+        elif model == "EGG":
+            h_turb = sample_egg(params, n_samples)
+        elif model == "EW":
+            h_turb = sample_ew(params, n_samples)
+        elif model == "Gamma-Gamma":
+            h_turb = sample_gamma_gamma(params, n_samples)
+        else:
+            continue
+
+        h = h_turb * h_u_point
+        h = h / np.sqrt(np.mean(h**2))
+
+        outage = calculate_outage_probability(h, snr_db_range, threshold_snr)
+        ber = calculate_average_ber(h, snr_db_range)
+        cap = calculate_ergodic_capacity(h, snr_db_range)
+
+        results.append(
+            {
+                "label": f"{model}-{idx}",
+                "model": model,
+                "outage": outage,
+                "ber": ber,
+                "cap": cap,
+            }
+        )
+
+    h_t_malaga = sample_malaga(towc_params["malaga"], n_samples)
+    h_t_fog = sample_fog(towc_params["fog"], n_samples)
+    h_t_point = sample_pointing(
+        towc_params["point"]["rho2"], towc_params["point"]["A_eq"], n_samples
+    )
+    h_towc = h_t_malaga * h_t_point * h_t_fog
+    h_towc = h_towc / np.sqrt(np.mean(h_towc**2))
+    outage_towc = calculate_outage_probability(h_towc, snr_db_range, threshold_snr)
+
+    avg_snr = calculate_snr_imdd(cfg_config)
+
+    return {"results": results, "outage_towc": outage_towc, "avg_snr": avg_snr}
 
 
 def _sync_instance_list(cfg, key, defaults, count):
@@ -47,11 +248,7 @@ def _build_instance_inputs(cfg):
     st.header("UOWC model instances")
 
     model_specs = [
-        (
-            "GG",
-            "gg_instances",
-            {"a": 0.6302, "d": 1.178, "p": 0.8444},
-        ),
+        ("GG", "gg_instances", {"a": 0.6302, "d": 1.178, "p": 0.8444}),
         (
             "EGG",
             "egg_instances",
@@ -63,16 +260,8 @@ def _build_instance_inputs(cfg):
                 "p_1": 35.9424,
             },
         ),
-        (
-            "EW",
-            "ew_instances",
-            {"alpha": 2.5, "beta": 0.7, "eta": 0.5},
-        ),
-        (
-            "Gamma-Gamma",
-            "gamma_gamma_instances",
-            {"alpha": 5.0, "beta": 1.18},
-        ),
+        ("EW", "ew_instances", {"alpha": 2.5, "beta": 0.7, "eta": 0.5}),
+        ("Gamma-Gamma", "gamma_gamma_instances", {"alpha": 5.0, "beta": 1.18}),
     ]
 
     for model_name, cfg_key, defaults in model_specs:
@@ -85,6 +274,9 @@ def _build_instance_inputs(cfg):
             value=_safe_int(st.session_state.get(count_key, 1), 1),
             key=count_key,
         )
+
+        if count > 0 and count_key not in st.session_state:
+            st.session_state[count_key] = int(count)
         _sync_instance_list(cfg, cfg_key, defaults, count)
 
         for idx in range(int(count)):
@@ -340,7 +532,10 @@ def main():
 
     model_instances = []
     for model in ["GG", "EGG", "EW", "Gamma-Gamma"]:
-        count = int(st.session_state.get(f"{model}_instances_count", 0))
+        count = int(st.session_state.get(f"{model}_instances_count", 1))
+        if count < 1:
+            count = 1
+            st.session_state[f"{model}_instances_count"] = 1
         for idx in range(count):
             params = {}
             if model == "GG":
@@ -433,7 +628,7 @@ def main():
 
     snr_db_range_list = [float(x) for x in snr_db_range.tolist()]
 
-    cache_signature = make_cache_signature(
+    cache_signature = _make_cache_signature(
         model_instances,
         cfg["uowc"]["rho2"],
         cfg["uowc"]["A_eq"],
@@ -444,7 +639,7 @@ def main():
         threshold_snr,
     )
 
-    cached = run_simulation_cached(
+    cached = _run_simulation_cached(
         cache_signature,
         json.dumps(
             [
@@ -462,23 +657,171 @@ def main():
         float(threshold_snr),
     )
 
-    figures = build_dashboard_figures(
-        snr_db_range=snr_db_range_list,
-        results=cached["results"],
-        outage_towc=cached["outage_towc"],
-        avg_snr=cached["avg_snr"],
-        n_samples=int(cfg["n_samples"]),
-    )
+    results = cached["results"]
+    outage_towc = cached["outage_towc"]
+    avg_snr = cached["avg_snr"]
 
     st.success("Simulation complete — building plots.")
 
+    color_cycle = [
+        "red",
+        "blue",
+        "green",
+        "goldenrod",
+        "crimson",
+        "purple",
+        "orange",
+        "teal",
+    ]
+    marker_cycle = ["square", "circle", "triangle-up", "diamond", "cross", "x"]
+
+    fig_outage = go.Figure()
+    for i, res in enumerate(results):
+        color = color_cycle[i % len(color_cycle)]
+        marker = marker_cycle[i % len(marker_cycle)]
+        fig_outage.add_trace(
+            go.Scatter(
+                x=snr_db_range_list,
+                y=res["outage"],
+                name=f"{res['label']} (UOWC)",
+                mode="lines+markers",
+                line=dict(color=color),
+                marker=dict(
+                    symbol=marker,
+                    size=7,
+                    line=dict(color=color, width=2),
+                    color="rgba(0,0,0,0)",
+                ),
+                hovertemplate="<b>%{fullData.name}</b><br>SNR: %{x:.1f} dB<br>Outage: %{y:.2e}<extra></extra>",
+            )
+        )
+        combined = [
+            1 - (1 - pu) * (1 - pt) for pu, pt in zip(res["outage"], outage_towc)
+        ]
+        fig_outage.add_trace(
+            go.Scatter(
+                x=snr_db_range_list,
+                y=combined,
+                name=f"{res['label']} + TOWC (DF)",
+                mode="lines",
+                line=dict(color=color, dash="dash"),
+                hovertemplate="<b>%{fullData.name}</b><br>SNR: %{x:.1f} dB<br>Outage: %{y:.2e}<extra></extra>",
+            )
+        )
+
+    fig_outage.add_vline(
+        x=avg_snr,
+        line_dash="dash",
+        line_color="grey",
+        opacity=0.4,
+        annotation_text=f"Avg SNR = {avg_snr:.1f} dB",
+        annotation_position="top right",
+    )
+    fig_outage.update_layout(
+        title=f"Outage Probability (N={cfg['n_samples']:.0e})",
+        xaxis_title="Average SNR (dB)",
+        yaxis_title="Outage Probability",
+        yaxis_type="log",
+        hovermode="x unified",
+        height=500,
+    )
+
+    fig_ber = go.Figure()
+    for i, res in enumerate(results):
+        color = color_cycle[i % len(color_cycle)]
+        marker = marker_cycle[i % len(marker_cycle)]
+        fig_ber.add_trace(
+            go.Scatter(
+                x=snr_db_range_list,
+                y=res["ber"],
+                name=f"{res['label']} BER",
+                mode="lines+markers",
+                line=dict(color=color),
+                marker=dict(
+                    symbol=marker,
+                    size=7,
+                    line=dict(color=color, width=2),
+                    color="rgba(0,0,0,0)",
+                ),
+                hovertemplate="<b>%{fullData.name}</b><br>SNR: %{x:.1f} dB<br>BER: %{y:.2e}<extra></extra>",
+            )
+        )
+    fig_ber.update_layout(
+        title=f"Bit Error Rate (N={cfg['n_samples']:.0e})",
+        xaxis_title="Average SNR (dB)",
+        yaxis_title="Bit Error Rate",
+        yaxis_type="log",
+        hovermode="x unified",
+        height=500,
+    )
+
+    fig_cap = go.Figure()
+    for i, res in enumerate(results):
+        color = color_cycle[i % len(color_cycle)]
+        marker = marker_cycle[i % len(marker_cycle)]
+        fig_cap.add_trace(
+            go.Scatter(
+                x=snr_db_range_list,
+                y=res["cap"],
+                name=f"{res['label']} Capacity",
+                mode="lines+markers",
+                line=dict(color=color),
+                marker=dict(
+                    symbol=marker,
+                    size=7,
+                    line=dict(color=color, width=2),
+                    color="rgba(0,0,0,0)",
+                ),
+                hovertemplate="<b>%{fullData.name}</b><br>SNR: %{x:.1f} dB<br>Capacity: %{y:.4f}<extra></extra>",
+            )
+        )
+    fig_cap.update_layout(
+        title=f"Ergodic Capacity (N={cfg['n_samples']:.0e})",
+        xaxis_title="Average SNR (dB)",
+        yaxis_title="Ergodic Capacity",
+        hovermode="x unified",
+        height=500,
+    )
+
+    fig_combined = go.Figure()
+    for i, res in enumerate(results):
+        color = color_cycle[i % len(color_cycle)]
+        marker = marker_cycle[i % len(marker_cycle)]
+        combined = [
+            1 - (1 - pu) * (1 - pt) for pu, pt in zip(res["outage"], outage_towc)
+        ]
+        fig_combined.add_trace(
+            go.Scatter(
+                x=snr_db_range_list,
+                y=combined,
+                name=f"{res['label']} + TOWC (DF)",
+                mode="lines+markers",
+                line=dict(color=color),
+                marker=dict(
+                    symbol=marker,
+                    size=7,
+                    line=dict(color=color, width=2),
+                    color="rgba(0,0,0,0)",
+                ),
+                hovertemplate="<b>%{fullData.name}</b><br>SNR: %{x:.1f} dB<br>Outage: %{y:.2e}<extra></extra>",
+            )
+        )
+    fig_combined.update_layout(
+        title=f"UOWC + TOWC Outage Probability (N={cfg['n_samples']:.0e})",
+        xaxis_title="Average SNR (dB)",
+        yaxis_title="Outage Probability",
+        yaxis_type="log",
+        hovermode="x unified",
+        height=500,
+    )
+
     col1, col2 = st.columns(2)
     with col1:
-        st.plotly_chart(figures["outage"], use_container_width=True)
-        st.plotly_chart(figures["capacity"], use_container_width=True)
+        st.plotly_chart(fig_outage, use_container_width=True)
+        st.plotly_chart(fig_cap, use_container_width=True)
     with col2:
-        st.plotly_chart(figures["ber"], use_container_width=True)
-        st.plotly_chart(figures["combined"], use_container_width=True)
+        st.plotly_chart(fig_ber, use_container_width=True)
+        st.plotly_chart(fig_combined, use_container_width=True)
 
     sim_elapsed = time.perf_counter() - sim_start_time
     st.caption(f"Simulation runtime: {sim_elapsed:.2f} seconds")
